@@ -1,0 +1,22 @@
+# VSCode
+.vscode/
+
+# Intellij IDEA
+*.iml
+.idea
+
+# Distribution / packaging
+build/
+dist/
+tagret/
+
+# Python
+__pycache__/
+
+# AWS
+.aws-sam
+
+# Environments
+.env
+env/
+venv/

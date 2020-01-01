@@ -1,0 +1,165 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  SAM Template for Lambda functions, API Gateway, DynamoDB and SQS integration
+  Integration scenario includes:
+  - REST API Lambda function which exposes operations for submitting and retrieving orders
+  - Audit Lambda function which listens to events from SQS queue and updates audit entries
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Runtime: python3.7
+    Timeout: 10
+    Tracing: Active
+  Api:
+    Name: "OrdersAPI"
+
+Resources:
+  OrdersApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: dev
+      TracingEnabled: true
+      Models:
+        Order:
+          type: object
+          required:
+            - customerId
+            - orderId
+            - name
+            - quantity
+            - price
+            - orderDate
+            - deliveryDate
+            - deliveryAddress
+          properties:
+            customerId:
+              type: string
+              format: uuid
+            orderId:
+              type: string
+              format: uuid
+            name:
+              type: string
+            quantity:
+              type: integer
+            currency:
+              type: string
+              default: USD
+            price:
+              type: number
+            orderDate:
+              type: string
+              format: date-time
+            deliveryDate:
+              type: string
+              format: date-time
+            deliveryAddress:
+              type: string
+
+  GetOrderApi:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: GetOrder
+      CodeUri: order_api/
+      Handler: app.get_order
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref OrdersTable
+      Environment:
+        Variables:
+          ORDERS_TABLE: !Ref OrdersTable
+          ORDERS_AUDIT_QUEUE: !GetAtt OrderAuditQueue.QueueName
+      Events:
+        GetOrder:
+          Type: Api
+          Properties:
+            Path: /orders
+            Method: get
+            RestApiId:
+              Ref: OrdersApi
+
+  PostOrderApi:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: CreateOrder
+      CodeUri: order_api/
+      Handler: app.create_order
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName:
+              Ref: OrdersTable
+        - AmazonSQSFullAccess
+      Environment:
+        Variables:
+          ORDERS_TABLE:
+            Ref: OrdersTable
+          ORDERS_AUDIT_QUEUE: !GetAtt OrderAuditQueue.QueueName
+      Events:
+        PostOrder:
+          Type: Api
+          Properties:
+            Path: /orders
+            Method: post
+            RestApiId:
+              Ref: OrdersApi
+            RequestModel:
+              Model: Order
+              Required: true
+
+  OrderAuditFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: CreateOrderAudit
+      CodeUri: order_audit/
+      Handler: app.handle_order_audit_event
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName:
+              Ref: OrdersAuditTable
+        - SQSPollerPolicy:
+            QueueName:
+              Ref: OrderAuditQueue
+      Environment:
+        Variables:
+          ORDERS_AUDIT_TABLE:
+            Ref: OrdersAuditTable
+          ORDERS_AUDIT_QUEUE: !GetAtt OrderAuditQueue.QueueName
+      Events:
+        OrderAudit:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrderAuditQueue.Arn
+            BatchSize: 10
+
+  OrdersTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      TableName: Orders
+      PrimaryKey:
+        Name: CustomerId
+        Type: String
+
+  OrdersAuditTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      TableName: OrdersAudit
+      PrimaryKey:
+        Name: CustomerId
+        Type: String
+
+  OrderAuditQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: OrdersAudit.fifo
+      FifoQueue: true
+      ContentBasedDeduplication: true
+
+Outputs:
+  OrdersApi:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${OrdersApi}.execute-api.${AWS::Region}.amazonaws.com/dev/orders/"
+  OrdersApiHost:
+    Description: "API Gateway host"
+    Value: !Sub "${OrdersApi}.execute-api.${AWS::Region}.amazonaws.com"
