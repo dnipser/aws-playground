@@ -6,6 +6,9 @@ from datetime import datetime
 from aws_xray_sdk.core import xray_recorder
 from aws_xray_sdk.core import patch
 
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+
 patch(['boto3'])
 
 dynamo_db = boto3.resource('dynamodb')
@@ -34,5 +37,5 @@ def handle_order_audit_event(event, context):
         "statusCode": 200,
         "body": json.dumps(item)
     }
-    logging.info("Processed order audit event ", result)
+    logging.info("Processed order audit event: {}".format(result))
     return response

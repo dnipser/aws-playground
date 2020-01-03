@@ -67,6 +67,7 @@ Resources:
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref OrdersTable
+        - AmazonSQSFullAccess
       Environment:
         Variables:
           ORDERS_TABLE: !Ref OrdersTable

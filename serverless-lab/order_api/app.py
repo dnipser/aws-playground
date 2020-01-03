@@ -8,6 +8,9 @@ from datetime import datetime
 from aws_xray_sdk.core import xray_recorder
 from aws_xray_sdk.core import patch
 
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+
 patch(['boto3'])
 
 dynamo_db = boto3.resource('dynamodb')
@@ -47,7 +50,7 @@ def get_order(event, context):
         "statusCode": 200,
         "body": json.dumps(result['Item'], cls=DecimalEncoder)
     }
-    logging.info("Get order result ", result)
+    logging.info("Get order result: {}".format(result))
     return response
 
 
@@ -82,7 +85,7 @@ def create_order(event, context):
         "statusCode": 200,
         "body": json.dumps(item, cls=DecimalEncoder)
     }
-    logging.info("Create order result ", response)
+    logging.info("Create order result {}".format(response))
     return response
 
 
