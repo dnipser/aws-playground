@@ -1,5 +1,11 @@
+# OSX specific
+.DS_Store
+
 # VSCode
 .vscode/
+
+# Gradle
+.gradle/
 
 # Intellij IDEA
 *.iml
@@ -20,3 +26,6 @@ __pycache__/
 .env
 env/
 venv/
+
+#Automatically generated CloudFormation templates
+*-resolved.yaml

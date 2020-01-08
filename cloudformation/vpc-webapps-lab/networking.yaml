@@ -1,0 +1,252 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  Sample VPC and networking stuff for AWS SOA preparation.
+  Creates VPC with 3 subnets (1 public and 2 private) across different availability zones,
+  internet and NAT gateway and corresponding routes. Includes NACLs and security groups for
+  private and public subnets.
+
+Parameters:
+  ParentStackName:
+    Type: String
+  SSHSourceIPAddress:
+    Type: String
+
+Resources:
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.10.0.0/16
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: SOA Lab VPC
+
+  PrivateSubnetDataStores:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.10.10.0/24
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: SOA Lab Private Subnet for DataStores
+
+  PrivateSubnetApps:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.10.20.0/24
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: SOA Lab Private Subnet for WebServices
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.10.30.0/24
+      AvailabilityZone: !Select
+        - '2'
+        - !GetAZs ''
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: SOA Lab Public Subnet
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: SOA Lab Internet Gateway
+
+  AttachInternetGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    DependsOn: NatGatewayEIP
+    Properties:
+      AllocationId: !GetAtt
+        - NatGatewayEIP
+        - AllocationId
+      SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: Name
+          Value: SOA Lab NAT Gateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: SOA Lab Public
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: SOA Lab Private
+
+  PublicInRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicOutRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateSubnetDataStoresRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetDataStores
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetAppsRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetApps
+      RouteTableId: !Ref PrivateRouteTable
+
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupName: !Sub '${ParentStackName}-bastion'
+      GroupDescription: Enables SSH access from specific IP address
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Sub '${SSHSourceIPAddress}/32'
+      Tags:
+        - Key: "Name"
+          Value: !Sub '${ParentStackName}-bastion'
+
+  PublicSubnetSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupName: !Sub '${ParentStackName}-public'
+      GroupDescription: Enables HTTP/HTTPS access to all inbound connections and SSH access to specific IP
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref BastionSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: "Name"
+          Value: !Sub '${ParentStackName}-public'
+
+  PrivateSubnetAppsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupName: !Sub '${ParentStackName}-private-apps'
+      GroupDescription: Enables HTTP and SSH access to all inbound connections from public subnet
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref BastionSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref PublicSubnetSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref PublicSubnetSecurityGroup
+      Tags:
+        - Key: "Name"
+          Value: !Sub '${ParentStackName}-private-apps'
+
+  PrivateSubnetDataStoresSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupName: !Sub '${ParentStackName}-private-datastores'
+      GroupDescription: Enables Database access to all inbound connections from apps subnet
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref PrivateSubnetAppsSecurityGroup
+      Tags:
+        - Key: "Name"
+          Value: !Sub '${ParentStackName}-private-datastores'
+
+Outputs:
+  VPCId:
+    Description: VPC Id
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${ParentStackName}-vpc'
+
+  NatIPAddress:
+    Description: 'The public IP address of the NAT gateway.'
+    Value: !Ref NatGatewayEIP
+    Export:
+      Name: !Sub '${ParentStackName}-nat-ip'
+
+  PublicSubnetId:
+    Description: Public Subnet Id
+    Value: !Ref PublicSubnet
+    Export:
+      Name: !Sub '${ParentStackName}-public-subnet'
+
+  PrivateSubnetDataStoresId:
+    Description: Private Subnet DataStores Id
+    Value: !Ref PrivateSubnetDataStores
+    Export:
+      Name: !Sub '${ParentStackName}-private-subnet-datastores'
+
+  PrivateSubnetAppsId:
+    Description: Private Subnet Apps Id
+    Value: !Ref PrivateSubnetApps
+    Export:
+      Name: !Sub '${ParentStackName}-private-subnet-apps'
+
+  BastionSecurityGroupId:
+    Description: Bastion Security Group Id
+    Value: !Ref BastionSecurityGroup
+    Export:
+      Name: !Sub '${ParentStackName}-bastion-security-group'

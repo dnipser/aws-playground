@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  Sample EC2 instances hosting Web Applications and Bastion hots for accessing infrastructure.
+
+Parameters:
+  ParentStackName:
+    Type: String
+  AmiId:
+    Description: Name of an AMI used to launch EC2 instance
+    Type: AWS::EC2::Image::Id
+  InstanceType:
+    Description: WebServer EC2 instance type
+    Type: String
+    AllowedValues: [t2.nano, t2.micro, t2.small]
+  InstanceSubnet:
+    Type: String
+  InstanceSecurityGroup:
+    Type: String
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+
+Resources:
+
+  BastionHost:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref InstanceSubnet
+      SecurityGroupIds: [!Ref InstanceSecurityGroup]
+      KeyName: !Ref KeyName
+      Tags:
+        - Key: "Name"
+          Value: !Sub '${ParentStackName}-bastion'
+
+Outputs:
+  BastionInstanceId:
+    Description: Identifier of the created EC2 bastion instance
+    Value: !Ref BastionHost
+
+  BastionAZ:
+    Description: Availability Zone of the created EC2 bastion instance
+    Value: !GetAtt [BastionHost, AvailabilityZone]
+
+  BastionPublicIP:
+    Description: Public IP address of the created EC2 bastion instance
+    Value: !GetAtt [BastionHost, PublicIp]

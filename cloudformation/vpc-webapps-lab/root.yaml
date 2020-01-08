@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Sample Stack for AWS SOA preparation
+
+Parameters:
+  SSHSourceIP:
+    # Resolve source IP address from SSM Parameter Store using SSHSourceIP alias
+    Type : AWS::SSM::Parameter::Value<String>
+    Default: SSHSourceIP
+  AmiId:
+    # Resolve AMI name for EC instance
+    # /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2 is a predefined path maintained by Amazon
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+  InstanceType:
+    Type: String
+    Default: t2.micro
+  KeyPairName:
+    # Resolve KeyName used to authenticate to the instance from SSM Parameter Store
+    Type : AWS::SSM::Parameter::Value<AWS::EC2::KeyPair::KeyName>
+    Default: SSHKeyName
+
+Resources:
+
+  Networking:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: networking.yaml
+      Parameters:
+        ParentStackName: !Ref AWS::StackName
+        SSHSourceIPAddress: !Ref SSHSourceIP
+
+  Applications:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: Networking
+    Properties:
+      TemplateURL: apps.yaml
+      Parameters:
+        ParentStackName: !Ref AWS::StackName
+        AmiId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        InstanceSubnet: !GetAtt [Networking, Outputs.PublicSubnetId]
+        InstanceSecurityGroup: !GetAtt [Networking, Outputs.BastionSecurityGroupId]
+        KeyName: !Ref KeyPairName
+
+Outputs:
+  StackName:
+    Description: 'Stack name'
+    Value: !Sub '${AWS::StackName}'
